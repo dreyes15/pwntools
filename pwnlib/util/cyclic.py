@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 
 import string
+import sys
 
 from pwnlib.context import context
 from pwnlib.log import getLogger
@@ -154,9 +155,6 @@ def metasploit_pattern(sets = None):
             offsets[i] = (offsets[i] + 1) % len(sets[i])
             if offsets[i] != 0:
                 break
-        # finish up if we've exhausted the sequence
-        if offsets == [ 0 ] * len(sets):
-            return
 
 def cyclic_metasploit(length = None, sets = None):
     """cyclic_metasploit(length = None, sets = [ string.ascii_uppercase, string.ascii_lowercase, string.digits ]) -> str
@@ -188,10 +186,6 @@ def cyclic_metasploit(length = None, sets = None):
             out.append(c)
 
     out = ''.join(out)
-
-    if len(out) < length:
-        log.error("Can't create a pattern of length %i with sets of lengths %s. Maximum pattern length is %i." \
-                  % (length, map(len, sets), len(out)))
 
     return ''.join(out)
 
@@ -234,3 +228,9 @@ def _gen_find(subseq, generator):
         if saved == subseq:
             return pos
     return -1
+
+
+length = int(sys.argv[1])
+print (cyclic_metasploit(length))
+
+#print cyclic_metasploit_find('Hm7H', length)
