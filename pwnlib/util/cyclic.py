@@ -137,8 +137,8 @@ def metasploit_pattern(sets = None):
     Generator for a sequence of characters as per Metasploit Framework's
     `Rex::Text.pattern_create` (aka `pattern_create.rb`).
 
-    The returned generator will yield up to
-    ``len(sets) * reduce(lambda x,y: x*y, map(len, sets))`` elements.
+    The returned generator will repeat after 20280 characters, similar to metasploit's
+    pattern_create.rb.
 
     Arguments:
         sets: List of strings to generate the sequence over.
@@ -156,14 +156,14 @@ def metasploit_pattern(sets = None):
             if offsets[i] != 0:
                 break
 
-def cyclic_metasploit(length = None, sets = None):
+def cyclic_metasploit(length = 20280, sets = None):
     """cyclic_metasploit(length = None, sets = [ string.ascii_uppercase, string.ascii_lowercase, string.digits ]) -> str
 
     A simple wrapper over :func:`metasploit_pattern`. This function returns a
-    string of length `length`.
+    string of length `length`, if length is over 20280 the pattern repeats.
 
     Arguments:
-        length: The desired length of the string or None if the entire sequence is desired.
+        length: The desired length of the string or None if the entire sequence reapating once (20280 characters) is desired.
         sets: List of strings to generate the sequence over.
 
     Example:
@@ -212,6 +212,15 @@ def cyclic_metasploit_find(subseq, sets = None):
     if isinstance(subseq, (int, long)):
         subseq = packing.pack(subseq, 'all', 'little', False)
 
+    if n is None and len(subseq) != 4:
+        log.warn_once("cyclic_metasploit_find() expects 4-byte subsequences by default, you gave %r\n" % subseq \
+            + "Unless you specified cyclic(..., n=%i), you probably just want the first 4 bytes.\n" % len(subseq) \
+            + "Truncating the data at 4 bytes.  Specify cyclic_find(..., n=%i) to override this." % len(subseq))
+        subseq = subseq[:4]
+
+    """TODO: add check for length, if length == none than print similar message to above stating that this method will
+    automatically set the length to 20280 unless otherwise specified"""
+
     return _gen_find(subseq, metasploit_pattern(sets))
 
 def _gen_find(subseq, generator):
@@ -228,9 +237,3 @@ def _gen_find(subseq, generator):
         if saved == subseq:
             return pos
     return -1
-
-
-length = int(sys.argv[1])
-print (cyclic_metasploit(length))
-
-#print cyclic_metasploit_find('Hm7H', length)
