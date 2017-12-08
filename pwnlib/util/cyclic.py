@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 
 import string
-import sys
 
 from pwnlib.context import context
 from pwnlib.log import getLogger
@@ -189,8 +188,8 @@ def cyclic_metasploit(length = 20280, sets = None):
 
     return ''.join(out)
 
-def cyclic_metasploit_find(subseq, sets = None):
-    """cyclic_metasploit_find(subseq, sets = [ string.ascii_uppercase, string.ascii_lowercase, string.digits ]) -> int
+def cyclic_metasploit_find(subseq, length = 20280 , n= None, sets = None):
+    """cyclic_metasploit_find(subseq, length, n = None, sets = [ string.ascii_uppercase, string.ascii_lowercase, string.digits ]) -> int
 
     Calculates the position of a substring into a Metasploit Pattern sequence.
 
@@ -198,14 +197,18 @@ def cyclic_metasploit_find(subseq, sets = None):
         subseq: The subsequence to look for. This can be a string or an
                 integer. If an integer is provided it will be packed as a
                 little endian integer.
+        length(int): The lenght of the pattern to find unuque sequence over
+        n(int): The length of subsequences that should be unique.
         sets: List of strings to generate the sequence over.
 
     Examples:
 
-        >>> cyclic_metasploit_find(cyclic_metasploit(1000)[514:518])
+        >>> cyclic_metasploit_find(cyclic_metasploit(Aa0A))
         514
-        >>> cyclic_metasploit_find(0x61413161)
-        4
+        >>> cyclic_metasploit_find("Aa0A",50000)
+        [*] Offset found at: 0
+        [*] Offset found at: 20280
+        [*] Offset found at: 40560
     """
     sets = sets or [ string.ascii_uppercase, string.ascii_lowercase, string.digits ]
 
@@ -213,15 +216,15 @@ def cyclic_metasploit_find(subseq, sets = None):
         subseq = packing.pack(subseq, 'all', 'little', False)
 
     if n is None and len(subseq) != 4:
-        log.warn_once("cyclic_metasploit_find() expects 4-byte subsequences by default, you gave %r\n" % subseq \
+        log.warn_once("cyclic_find() expects 4-byte subsequences by default, you gave %r\n" % subseq \
             + "Unless you specified cyclic(..., n=%i), you probably just want the first 4 bytes.\n" % len(subseq) \
             + "Truncating the data at 4 bytes.  Specify cyclic_find(..., n=%i) to override this." % len(subseq))
         subseq = subseq[:4]
 
-    """TODO: add check for length, if length == none than print similar message to above stating that this method will
-    automatically set the length to 20280 unless otherwise specified"""
+    offsets_found = _gen_find_metasploit(subseq, length, metasploit_pattern(sets))
 
-    return _gen_find(subseq, metasploit_pattern(sets))
+    for offset in offsets_found:
+        log.info("Offset found at: %s" % (offset))
 
 def _gen_find(subseq, generator):
     """Returns the first position of `subseq` in the generator or -1 if there is no such position."""
@@ -237,3 +240,26 @@ def _gen_find(subseq, generator):
         if saved == subseq:
             return pos
     return -1
+
+def _gen_find_metasploit(subseq,length, generator):
+    """Return a list of the multiple positions of `subseq` in the generator for the given length or -1 if there is no such position."""
+    subseq = list(subseq)
+    pos = 0
+    indexes=[]
+    saved = []
+
+    for c in generator:
+        saved.append(c)
+        if len(saved) > len(subseq):
+            if length <= pos:
+                break
+            saved.pop(0)
+            pos += 1
+        if saved == subseq:
+            if length <= pos:
+                return indexes
+            indexes.append(pos)
+
+    if not indexes:
+        indexes.append('-1')
+    return indexes
