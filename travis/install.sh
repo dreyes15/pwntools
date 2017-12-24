@@ -1,5 +1,5 @@
 #!/usr/bin/env bash -e
-set -e
+set -ex
 
 local_deb_extract()
 {
@@ -15,7 +15,7 @@ install_deb()
     package=$1
     echo "Installing $package"
     INDEX="http://packages.ubuntu.com/en/$version/amd64/$package/download"
-    URL=$(curl "$INDEX" | grep -Eo "https?://.*$package.*\.deb" | head -1)
+    URL=$(curl -L "$INDEX" | grep -Eo "https?://.*$package.*\.deb" | head -1)
     local_deb_extract "$URL"
 }
 
@@ -65,9 +65,14 @@ setup_travis()
 setup_linux()
 {
     sudo apt-get install -y software-properties-common openssh-server libncurses5-dev libncursesw5-dev openjdk-8-jre-headless
-    sudo apt-add-repository --yes ppa:pwntools/binutils
-    sudo apt-get update
-    sudo apt-get install binutils-arm-linux-gnu binutils-mips-linux-gnu binutils-powerpc-linux-gnu
+    RELEASE="$(lsb-release -sr)"
+    if [[ "$RELEASE" < "16.04" ]]; then
+        sudo apt-add-repository --yes ppa:pwntools/binutils
+        sudo apt-get update
+        sudo apt-get install -y binutils-arm-linux-gnu binutils-mips-linux-gnu binutils-powerpc-linux-gnu
+    else
+        sudo apt-get install -y binutils-arm-linux-gnueabihf binutils-mips-linux-gnu binutils-powerpc-linux-gnu
+    fi
 }
 
 setup_android_emulator()
@@ -85,7 +90,7 @@ setup_android_emulator()
         elif [[ -n "$TRAVIS_TAG" ]]; then
             echo "TRAVIS_TAG ($TRAVIS_TAG) indicates a new relase"
             echo "Forcing Android Emulator installation"
-        elif (git log --stat "$TRAVIS_COMMIT_RANGE" | grep -iE "android|adb"); then
+        elif (git log --stat "$TRAVIS_COMMIT_RANGE" | grep -iE "android|adb" | grep -v "commit "); then
             echo "Found Android-related commits, forcing Android Emulator installation"
         else
             # In order to avoid running the doctests that require the Android
@@ -114,7 +119,7 @@ setup_android_emulator()
     else
         if [ ! -f android-sdk/android ]; then
             # Install the SDK, which gives us the 'android' and 'emulator' commands
-            wget https://dl.google.com/android/android-sdk_r24.4.1-linux.tgz
+            wget -nv https://dl.google.com/android/android-sdk_r24.4.1-linux.tgz
             tar xf android-sdk_r24.4.1-linux.tgz
             rm  -f android-sdk_r24.4.1-linux.tgz
 
@@ -132,7 +137,7 @@ setup_android_emulator()
         # Install the NDK, which is required for adb.compile()
         NDK_VERSION=android-ndk-r12b
         if [ ! -f android-ndk/ndk-build ]; then
-            wget   https://dl.google.com/android/repository/$NDK_VERSION-linux-x86_64.zip
+            wget -nv https://dl.google.com/android/repository/$NDK_VERSION-linux-x86_64.zip
             unzip -q android-ndk-*.zip
             rm -f    android-ndk-*.zip
 
@@ -193,4 +198,4 @@ elif [[ "$(uname)" == "Linux" ]]; then
     setup_android_emulator
 fi
 
-set +e
+set +ex

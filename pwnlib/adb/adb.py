@@ -328,7 +328,7 @@ class AdbDevice(Device):
             kwargs['port'] = 'emulator'
 
         for field in fields[2:]:
-            k,v = field.split(':')
+            k,v = field.split(':', 1)
             kwargs[k] = v
 
         return AdbDevice(serial, type, **kwargs)
@@ -820,6 +820,7 @@ echo $PATH | while read -d: directory; do
     [ -x "$directory/{name}" ] || continue;
     echo -n "$directory/{name}\\x00";
 done
+[ -x "{name}" ] && echo -n "$PWD/{name}\\x00"
 '''.format(name=name)
 
     which_cmd = which_cmd.strip()
@@ -1197,13 +1198,23 @@ def compile(source):
     if not project:
         # Realistically this should inherit from context.arch, but
         # this works for now.
-        abi = 'armeabi-v7a'
         sdk = '21'
+        abi = {
+            'aarch64': 'arm64-v8a',
+            'amd64':   'x86_64',
+            'arm':     'armeabi-v7a',
+            'i386':    'x86',
+            'mips':    'mips',
+            'mips64':  'mips64',
+        }.get(context.arch, None)
 
         # If we have an attached device, use its settings.
         if context.device:
             abi = str(properties.ro.product.cpu.abi)
             sdk = str(properties.ro.build.version.sdk)
+
+        if abi is None:
+            log.error("Unknown CPU ABI")
 
         project = _generate_ndk_project(source, abi, sdk)
 
