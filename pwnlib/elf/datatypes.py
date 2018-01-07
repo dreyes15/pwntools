@@ -252,6 +252,40 @@ class constants:
     AT_L2_CACHESHAPE        = 36
     AT_L3_CACHESHAPE        = 37
 
+    # Legal flags used in the d_val field of the DT_FLAGS dynamic entry.
+    DF_ORIGIN               = 0x01
+    DF_SYMBOLIC             = 0x02
+    DF_TEXTREL              = 0x04
+    DF_BIND_NOW             = 0x08
+    DF_STATIC_TLS           = 0x10
+
+    # Legal flags used in the d_val field of the DT_FLAGS_1 dynamic entry.
+    DF_1_NOW                = 0x00000001
+    DF_1_GLOBAL             = 0x00000002
+    DF_1_GROUP              = 0x00000004
+    DF_1_NODELETE           = 0x00000008
+    DF_1_LOADFLTR           = 0x00000010
+    DF_1_INITFIRST          = 0x00000020
+    DF_1_NOOPEN             = 0x00000040
+    DF_1_ORIGIN             = 0x00000080
+    DF_1_DIRECT             = 0x00000100
+    DF_1_TRANS              = 0x00000200
+    DF_1_INTERPOSE          = 0x00000400
+    DF_1_NODEFLIB           = 0x00000800
+    DF_1_NODUMP             = 0x00001000
+    DF_1_CONFALT            = 0x00002000
+    DF_1_ENDFILTEE          = 0x00004000
+    DF_1_DISPRELDNE         = 0x00008000
+    DF_1_DISPRELPND         = 0x00010000
+    DF_1_NODIRECT           = 0x00020000
+    DF_1_IGNMULDEF          = 0x00040000
+    DF_1_NOKSYMS            = 0x00080000
+    DF_1_NOHDR              = 0x00100000
+    DF_1_EDITED             = 0x00200000
+    DF_1_NORELOC            = 0x00400000
+    DF_1_SYMINTPOSE         = 0x00800000
+    DF_1_GLOBAUDIT          = 0x01000000
+    DF_1_SINGLETON          = 0x02000000
 
 
 class Elf32_Ehdr(ctypes.Structure):
@@ -595,7 +629,7 @@ class Elf64_auxv_t(ctypes.Structure):
     _fields_ = [('a_type', ctypes.c_uint64),
                 ('a_val', ctypes.c_uint64),]
 
-def generate_prspinfo(long):
+def generate_prpsinfo(long):
     return [
         ('pr_state', byte),
         ('pr_sname', char),
@@ -612,11 +646,11 @@ def generate_prspinfo(long):
         ('pr_psargs', char * 80)
     ]
 
-class elf_prspinfo_32(ctypes.Structure):
-    _fields_ = generate_prspinfo(Elf32_Addr)
+class elf_prpsinfo_32(ctypes.Structure):
+    _fields_ = generate_prpsinfo(Elf32_Addr)
 
-class elf_prspinfo_64(ctypes.Structure):
-    _fields_ = generate_prspinfo(Elf64_Addr)
+class elf_prpsinfo_64(ctypes.Structure):
+    _fields_ = generate_prpsinfo(Elf64_Addr)
 
 def generate_siginfo(int_t, long_t):
     class siginfo_t(ctypes.Structure):

@@ -145,7 +145,7 @@ class DynELF(object):
     .. _DT_PLTGOT: http://refspecs.linuxfoundation.org/ELF/zSeries/lzsabi0_zSeries/x2251.html
     '''
 
-    def __init__(self, leak, pointer=None, elf=None):
+    def __init__(self, leak, pointer=None, elf=None, libcdb=True):
         '''
         Instantiates an object which can resolve symbols in a running binary
         given a :class:`pwnlib.memleak.MemLeak` leaker and a pointer inside
@@ -155,8 +155,11 @@ class DynELF(object):
             leak(MemLeak): Instance of pwnlib.memleak.MemLeak for leaking memory
             pointer(int):  A pointer into a loaded ELF file
             elf(str,ELF):  Path to the ELF file on disk, or a loaded :class:`pwnlib.elf.ELF`.
+            libcdb(bool):  Attempt to use libcdb to speed up libc lookups
         '''
+        self.libcdb    = libcdb
         self._elfclass = None
+        self._elftype  = None
         self._link_map = None
         self._waitfor  = None
         self._bases    = {}
@@ -203,6 +206,22 @@ class DynELF(object):
             self._elfclass =  {constants.ELFCLASS32: 32,
                               constants.ELFCLASS64: 64}[elfclass]
         return self._elfclass
+
+    @property
+    def elftype(self):
+        """e_type from the elf header. In practice the value will almost always
+        be 'EXEC' or 'DYN'. If the value is architecture-specific (between
+        ET_LOPROC and ET_HIPROC) or invalid, KeyError is raised.
+        """
+        if not self._elftype:
+            Ehdr  = {32: elf.Elf32_Ehdr, 64: elf.Elf64_Ehdr}[self.elfclass]
+            elftype = self.leak.field(self.libbase, Ehdr.e_type)
+            self._elftype = {constants.ET_NONE: 'NONE',
+                             constants.ET_REL: 'REL',
+                             constants.ET_EXEC: 'EXEC',
+                             constants.ET_DYN: 'DYN',
+                             constants.ET_CORE: 'CORE'}[elftype]
+        return self._elftype
 
     @property
     def link_map(self):
@@ -356,9 +375,7 @@ class DynELF(object):
         dynamic = leak.field(phead, Phdr.p_vaddr)
         self.status("PT_DYNAMIC @ %#x" % dynamic)
 
-        #Sometimes this is an offset instead of an address
-        if 0 < dynamic < 0x400000:
-            dynamic += base
+        dynamic = self._make_absolute_ptr(dynamic)
 
         return dynamic
 
@@ -392,9 +409,7 @@ class DynELF(object):
         self.status("Found %s at %#x" % (name, dynamic))
         ptr = leak.field(dynamic, Dyn.d_ptr)
 
-        # Sometimes this is an offset rather than an actual pointer.
-        if 0 < ptr < 0x400000:
-            ptr += self.libbase
+        ptr = self._make_absolute_ptr(ptr)
 
         return ptr
 
@@ -402,7 +417,7 @@ class DynELF(object):
     def _find_linkmap(self, pltgot=None, debug=None):
         """
         The linkmap is a chained structure created by the loader at runtime
-        which contains information on the names and load addresses osf all
+        which contains information on the names and load addresses of all
         libraries.
 
         For non-RELRO binaries, a pointer to this is stored in the .got.plt
@@ -416,7 +431,7 @@ class DynELF(object):
         Got     = {32: elf.Elf_i386_GOT, 64: elf.Elf_x86_64_GOT}[self.elfclass]
         r_debug = {32: elf.Elf32_r_debug, 64: elf.Elf64_r_debug}[self.elfclass]
 
-        result = None
+        linkmap = None
 
         if not pltgot:
             w.status("Finding linkmap: DT_PLTGOT")
@@ -424,25 +439,24 @@ class DynELF(object):
 
         if pltgot:
             w.status("GOT.linkmap")
-            result = self.leak.field(pltgot, Got.linkmap)
-            w.status("GOT.linkmap %#x" % result)
+            linkmap = self.leak.field(pltgot, Got.linkmap)
+            w.status("GOT.linkmap %#x" % linkmap)
 
-        if not result:
+        if not linkmap:
             debug = debug or self._find_dt(constants.DT_DEBUG)
             if debug:
                 w.status("r_debug.linkmap")
-                result = self.leak.field(debug, r_debug.r_map)
-                w.status("r_debug.linkmap %#x" % result)
+                linkmap = self.leak.field(debug, r_debug.r_map)
+                w.status("r_debug.linkmap %#x" % linkmap)
 
-        if not (pltgot or debug):
+        if not linkmap:
             w.failure("Could not find DT_PLTGOT or DT_DEBUG")
             return None
 
-        if 0 < result < 0x400000:
-            result += self.libbase
+        linkmap = self._make_absolute_ptr(linkmap)
 
-        w.success('%#x' % result)
-        return result
+        w.success('%#x' % linkmap)
+        return linkmap
 
     def waitfor(self, msg):
         if not self._waitfor:
@@ -509,6 +523,7 @@ class DynELF(object):
 
         Arguments:
             symb(str): Named routine to look up
+              If omitted, the base address of the library will be returned.
             lib(str): Substring to match for the library name.
               If omitted, the current library is searched.
               If set to ``'libc'``, ``'libc.so'`` is assumed.
@@ -548,11 +563,10 @@ class DynELF(object):
         #
         # If we are resolving a symbol in the library, find it.
         #
-        if symb:
+        if symb and self.libcdb:
             # Try a quick lookup by build ID
             self.status("Trying lookup based on Build ID")
             build_id = dynlib._lookup_build_id(lib=lib)
-            result   = None
             if build_id:
                 log.info("Trying lookup based on Build ID: %s" % build_id)
                 path = libcdb.search_by_build_id(build_id)
@@ -561,11 +575,10 @@ class DynELF(object):
                         e = ELF(path)
                         e.address = dynlib.libbase
                         result = e.symbols[symb]
-
-            if not result:
-                self.status("Trying remote lookup")
-                result = dynlib._lookup(symb)
-        else:
+        if symb and not result:
+            self.status("Trying remote lookup")
+            result = dynlib._lookup(symb)
+        if not symb:
             result = dynlib.libbase
 
         #
@@ -672,11 +685,9 @@ class DynELF(object):
         if not all([strtab, symtab, hshtab]):
             self.failure("Could not find all tables")
 
-        # glibc pointers are relocated but uclibc are not
-        if 0 < strtab < 0x400000:
-            strtab  += self.libbase
-            symtab  += self.libbase
-            hshtab  += self.libbase
+        strtab = self._make_absolute_ptr(strtab)
+        symtab = self._make_absolute_ptr(symtab)
+        hshtab = self._make_absolute_ptr(hshtab)
 
         #
         # Perform the hash lookup
@@ -827,6 +838,9 @@ class DynELF(object):
     def _lookup_build_id(self, lib = None):
 
         libbase = self.libbase
+        if not self.link_map:
+            self.status("No linkmap found")
+            return None
 
         if lib is not None:
             libbase = self.lookup(symb = None, lib = lib)
@@ -842,6 +856,29 @@ class DynELF(object):
             else:
                 self.status("Magic did not match")
                 pass
+
+    def _make_absolute_ptr(self, ptr_or_offset):
+        """For shared libraries (or PIE executables), many ELF fields may
+        contain offsets rather than actual pointers. If the ELF type is 'DYN',
+        the argument may be an offset. It will not necessarily be an offset,
+        because the run-time linker may have fixed it up to be a real pointer
+        already. In this case an educated guess is made, and the ELF base
+        address is added to the value if it is determined to be an offset.
+        """
+        if_ptr = ptr_or_offset
+        if_offset = ptr_or_offset + self.libbase
+
+        # if the ELF type is not DYN, the value is a pointer
+
+        if self.elftype != 'DYN':
+            return if_ptr
+
+        # if the ELF type may be DYN, guess
+
+        if 0 < ptr_or_offset < self.libbase:
+            return if_offset
+        else:
+            return if_ptr
 
     def stack(self):
         """Finds a pointer to the stack via __environ, which is an exported
