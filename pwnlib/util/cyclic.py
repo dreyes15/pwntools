@@ -325,6 +325,8 @@ def cyclic_metasploit_find(subseq, length = 20280 , n= None, sets = None):
 
     for offset in offsets_found:
         log.info("Offset found at: %s" % (offset))
+    
+    return offsets_found
 
 def _gen_find(subseq, generator):
     """Returns the first position of `subseq` in the generator or -1 if there is no such position."""
