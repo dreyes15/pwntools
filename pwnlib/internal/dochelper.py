@@ -3,10 +3,14 @@ from os.path import basename
 
 from docutils import nodes
 from docutils import statemachine
+<<<<<<< HEAD
 try:
     from sphinx.util.compat import Directive
 except ImportError:
     from docutils.parsers.rst import Directive
+=======
+from docutils.parsers.rst import Directive
+>>>>>>> upstream/stable
 
 try:
     from StringIO import StringIO
